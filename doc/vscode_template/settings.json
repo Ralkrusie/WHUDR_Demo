@@ -1,0 +1,4 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}",
+    "files.encoding": "utf8bom"
+}
