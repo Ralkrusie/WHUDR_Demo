@@ -1,7 +1,7 @@
 #include <iostream>
 #include <SFML/Graphics.hpp>
 #include "Game/SaveManager.h"
-
+#include "Game/Game.h"
 
 
 
@@ -23,15 +23,7 @@ int main() {
     } else {
         std::cout << "Failed to load game from slot " << testSlotId << std::endl;
     }
-
-    sf::RenderWindow window(sf::VideoMode({640, 480}), "WHUDR Test");
-    while (window.isOpen()) {
-        while (const std::optional<sf::Event> event = window.pollEvent()) {
-            if (event->is<sf::Event::Closed>()) {
-                window.close();
-                SaveManager::saveGame(testSlotId);
-            }
-        }
-    }
+    Game game;
+    game.run();
     return 0;
 }

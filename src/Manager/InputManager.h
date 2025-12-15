@@ -8,6 +8,7 @@
 */
 #pragma once
 #include <SFML/Window.hpp>
+#include <SFML/Graphics.hpp>
 
 enum class Action {
     Up,
@@ -22,24 +23,8 @@ enum class Action {
 class InputManager {
 public:
     // 检测是否【按住】（用于移动）
-    static bool isHeld(Action action) {
-        switch (action) {
-            case Action::Up:    return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::W);
-            case Action::Down:  return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::S);
-            case Action::Left:  return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A);
-            case Action::Right: return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D);
-            case Action::Confirm: return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter);
-            case Action::Cancel:  return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::X) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift);
-            default: return false;
-        }
-    }
+    static bool isHeld(Action action, sf::RenderWindow& window);
 
     // 检测是否【单次按下】（用于菜单选择，防止一按跳好几格）
-    // 这通常需要配合 event loop 使用，这里简化演示
-    static bool isJustPressed(sf::Keyboard::Key key, Action action) {
-        // 这个通常在 pollEvent 的循环里调用
-        if (action == Action::Confirm && (key == sf::Keyboard::Key::Z || key == sf::Keyboard::Key::Enter)) return true;
-        // ... 其他映射
-        return false;
-    }
+    static bool isPressed(Action action, sf::RenderWindow& window);
 };
