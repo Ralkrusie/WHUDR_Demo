@@ -21,7 +21,7 @@ struct Global
 {
     //基础数据
     static inline std::string playerName = "player";      //玩家名称
-    static inline std::string currentMRoomName = "Start"; //当前地图名称    
+    static inline std::string currentMRoomName = "Title"; //当前地图名称    
     static inline int money = 0;                          //钱
     static inline std::vector<std::string> inventory;   //物品
 };
