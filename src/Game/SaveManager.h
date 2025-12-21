@@ -20,6 +20,7 @@ struct SavePreview {
 
 class SaveManager {
 public:
+
     // 保存游戏 (传入存档槽位，比如 0, 1, 2)
     static void saveGame(int slotId);
 

@@ -17,7 +17,8 @@ enum class Action {
     Right,
     Confirm, // Z 或 Enter
     Cancel,  // X 或 Shift
-    Menu     // C 或 Ctrl
+    Menu,    // C 或 Ctrl
+    Debug    // D：开关调试显示
 };
 
 class InputManager {

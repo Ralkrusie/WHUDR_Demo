@@ -14,7 +14,10 @@ file(GLOB_RECURSE SRC_FILES "src/*.cpp")
 add_executable(WHUDR ${SRC_FILES})
 
 # 包含 src 头文件路径
-target_include_directories(WHUDR PRIVATE src)
+target_include_directories(WHUDR PRIVATE
+    src
+    ${CMAKE_SOURCE_DIR}/external/JSON
+)
 
 # 链接 SFML
 target_link_libraries(WHUDR PRIVATE

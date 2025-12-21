@@ -1,6 +1,55 @@
 {
-    "current_room": "Title",
-    "inventory": [],
+    "current_room": "SecretRoom",
+    "has_holy_mantle": true,
+    "inventory": [
+        "luojia_drink",
+        "luojia_drink",
+        "HolyMantle"
+    ],
     "money": 0,
+    "party": [
+        {
+            "armor_id": [
+                "whu_shirt",
+                "Null"
+            ],
+            "atk": 10,
+            "def": 2,
+            "hp": 100,
+            "id": "kris",
+            "mag": 0,
+            "max_hp": 100,
+            "name": "Kris",
+            "weapon_id": "wooden_sword"
+        },
+        {
+            "armor_id": [
+                "whu_shirt",
+                "Null"
+            ],
+            "atk": 20,
+            "def": 5,
+            "hp": 120,
+            "id": "susie",
+            "mag": 0,
+            "max_hp": 120,
+            "name": "Susie",
+            "weapon_id": "axe"
+        },
+        {
+            "armor_id": [
+                "whu_shirt",
+                "Null"
+            ],
+            "atk": 5,
+            "def": 3,
+            "hp": 80,
+            "id": "ralsei",
+            "mag": 15,
+            "max_hp": 80,
+            "name": "Ralsei",
+            "weapon_id": "scarf"
+        }
+    ],
     "player_name": "player"
 }
