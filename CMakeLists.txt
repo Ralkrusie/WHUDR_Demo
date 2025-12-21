@@ -13,6 +13,13 @@ file(GLOB_RECURSE SRC_FILES "src/*.cpp")
 
 add_executable(WHUDR ${SRC_FILES})
 
+# 确保新房间源文件被显式加入（即使旧生成目录未重新配置）
+target_sources(WHUDR PRIVATE
+    src/Overworld/AlphysClass.cpp
+    src/Overworld/SecretRoom.cpp
+    src/Battle/BattleActor.cpp
+)
+
 # 包含 src 头文件路径
 target_include_directories(WHUDR PRIVATE src)
 

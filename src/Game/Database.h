@@ -2,6 +2,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <SFML/System/String.hpp>
 
 
 
@@ -10,7 +11,7 @@
 struct Armor
 {
     std::string id;
-    std::string name;
+    sf::String name;
     int defense;
 };
 
@@ -18,7 +19,7 @@ struct Armor
 struct Weapon
 {
     std::string id;
-    std::string name;
+    sf::String name;
     int attack;
 };
 
@@ -26,7 +27,7 @@ struct Weapon
 struct HellingItem
 {
     std::string id;
-    std::string name;
+    sf::String name;
     int healAmount;
 };
 
@@ -34,7 +35,7 @@ struct HellingItem
 struct Hero
 {
     std::string id;
-    std::string name;
+    sf::String name;
     int maxHP;
     int baseAttack;
     int baseDefense;
