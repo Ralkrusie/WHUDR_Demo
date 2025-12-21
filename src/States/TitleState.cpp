@@ -103,13 +103,6 @@ void TitleState::handleEvent() {
             }
         }
     }
-
-    // if (statefinished) {
-    //     //切换到下一个状态:OverworldState
-    //     if (InputManager::isPressed(Action::Confirm, m_game.getWindow())) {
-    //         m_game.changeState(std::make_unique<OverworldState>(m_game));
-    //     }
-    // }
 }
 
 void TitleState::update(float dt) {

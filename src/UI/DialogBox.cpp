@@ -2,8 +2,24 @@
 #include "Manager/AudioManager.h"
 #include <iostream>
 
+//
+// 对话框（DialogueBox）模块
+// -------------------------
+// 职责：
+// - 逐字打字效果（中文友好），支持标点停顿与语音节流
+// - 头像与文本布局；底部黑底白框的 UI 外观
+// - 选项模式：横向排列选项文本、心形游标指示、左右切换与确认返回
+// - 文本换行：按像素宽度（字体与字号）进行 SFML 文本测量后的软换行
+// 关键约定：
+// - 字体必须支持中文；加载失败时禁用对话防止崩溃
+// - start() 用于普通文本；startWithChoices() 进入选项模式
+// - onConfirm()：打字中则立即完成文本；打完则关闭（非选项模式）
+// - onConfirmChoice()：在选项模式下确认并返回选中索引
+//
+
 namespace {
 sf::String wrapTextToWidth(const sf::String& input, float maxWidth, const sf::Font& font, unsigned int charSize) {
+    // 按像素宽度换行：逐字符试探并使用 SFML 的 LocalBounds 宽度判断是否超出
     sf::Text measure(font, "", charSize);
     sf::String currentLine;
     sf::String output;
@@ -32,7 +48,7 @@ sf::String wrapTextToWidth(const sf::String& input, float maxWidth, const sf::Fo
 }
 }
 
-// 构造函数：初始化外观
+// 构造函数：初始化字体、文本与对话框外观、心形指示器
 DialogueBox::DialogueBox():
     m_renderText(m_font){
     // 1. 加载字体 (必须是支持中文的字体！例如 simhei.ttf 或像素字体)
@@ -69,7 +85,7 @@ DialogueBox::DialogueBox():
     }
 }
 
-// moved to bool DialogueBox::start
+// moved to bool DialogueBox::start（打字逻辑在 start 中初始化）
 
 void DialogueBox::update(float dt) {
     if (!m_active) return;
@@ -94,7 +110,7 @@ void DialogueBox::update(float dt) {
             // SFML 的 substring 方法：从 0 开始，截取 m_charIndex 个长度
             m_renderText.setString(m_targetText.substring(0, m_charIndex));
 
-            // --- 关键：播放音效 ---
+            // --- 关键：播放打字音效 ---
             // 节流：仅在非空白字符且按间隔播音（如每2字一次）
             if (m_voiceKey.has_value()) {
                 bool isWhitespace = (nextChar == L' ' || nextChar == L'\n' || nextChar == L'\t');
@@ -159,7 +175,7 @@ bool DialogueBox::start(const sf::String& text, const sf::Texture* faceTexture, 
     }
 
     m_active = true;
-    m_targetText = wrapTextToWidth(text, 520.f, m_font, m_renderText.getCharacterSize());
+    m_targetText = wrapTextToWidth(text, 520.f, m_font, m_renderText.getCharacterSize()); // 先软换行再打字
     m_charIndex = 0;
     m_timer = 0.f;
     m_renderText.setString(""); // 清空当前显示
@@ -168,7 +184,7 @@ bool DialogueBox::start(const sf::String& text, const sf::Texture* faceTexture, 
     // 设置头像
     if (faceTexture) {
         m_hasFace = true;
-        // 核心修改：构造一个新的 Sprite 放入 optional
+        // 头像：构造 Sprite 并放入 optional，控制缩放与位置
         m_faceSprite.emplace(*faceTexture); 
         // 使用 -> 访问成员
         m_faceSprite->setScale({1.8f, 1.8f});  // 放大头像

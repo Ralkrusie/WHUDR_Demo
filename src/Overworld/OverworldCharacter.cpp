@@ -3,6 +3,20 @@
 #include <algorithm>
 #include <cmath> // for std::abs
 
+//
+// 探索角色（OverworldCharacter）
+// ------------------------------
+// 职责：
+// - 队长（玩家）输入驱动的移动、朝向与动画
+// - 队员（跟随者）基于队长历史记录的延迟跟随与追赶机制
+// - 移动碰撞：与地图墙体/交互碰撞箱做检测，简单分离轴移动（先 X 后 Y）
+// - 绘制与深度排序键收集（底边 y）
+// 关键约定：
+// - 角色原点在贴图底边中心；脚底碰撞箱为底部较小矩形，随缩放而变化
+// - 动画序列为 4 方向 × 4 帧，索引映射为 Down/Left/Right/Up × frame
+// - 跟随延迟按队员序号线性增加，拉长时启用追赶倍率上限
+//
+
 namespace {
 constexpr float kMinFootW = 8.f;
 constexpr float kMinFootH = 6.f;
@@ -24,7 +38,7 @@ constexpr float kMoveEpsilonSq = 0.001f;       // 判定“未移动”的平方
 
 OverworldCharacter::OverworldCharacter(Game& game, const SpriteSet& spriteSet)
     : m_game(game) {
-    // 预加载 4 方向 * 4 帧的贴图；占位路径示例，可按需替换
+    // 预加载 4 方向 × 4 帧的贴图；按传入 SpriteSet 的资源路径加载
     // Down: frames[0], Left: frames[1], Right: frames[2], Up: frames[3]
     size_t idx = 0;
     for (int dir = 0; dir < 4; ++dir) {
@@ -52,6 +66,7 @@ OverworldCharacter::OverworldCharacter(Game& game, const SpriteSet& spriteSet)
 // 队长逻辑 (Kris)
 // ==========================================
 void OverworldCharacter::updateLeader(float dt, GameMap& map) {
+    // 读取输入 → 确定朝向 → 归一化 → 应用速度 → 移动碰撞 → 更新动画
     sf::Vector2f velocity(0.f, 0.f);
     m_isMoving = false;
     m_isRunning = InputManager::isHeld(Action::Cancel,m_game.getWindow()); // 按住 X 键奔跑
@@ -70,7 +85,7 @@ void OverworldCharacter::updateLeader(float dt, GameMap& map) {
     if (velocity.x < 0) m_direction = 1; // 左
     else if (velocity.x > 0) m_direction = 2; // 右
 
-    // 3. 归一化向量 (避免斜着走变快)
+    // 3. 归一化向量（避免斜着走变快）并按步速移动
     if (velocity.x != 0 || velocity.y != 0) {
         m_isMoving = true;
         // 简单的归一化逻辑
@@ -96,7 +111,7 @@ void OverworldCharacter::updateLeader(float dt, GameMap& map) {
 // 碰撞与移动 (核心算法: 分离轴移动)
 // ==========================================
 bool OverworldCharacter::moveAndSlide(sf::Vector2f velocity, float dt, GameMap& map) {
-    // 简单分离轴：先 X 后 Y，避免斜墙滑动逻辑导致弹出
+    // 简单分离轴：先 X 后 Y，分别尝试；若某轴上碰撞则回退该轴位移
     sf::Vector2f offset = velocity * dt;
     if (offset.x == 0.f && offset.y == 0.f) return false;
 
@@ -124,6 +139,7 @@ bool OverworldCharacter::moveAndSlide(sf::Vector2f velocity, float dt, GameMap& 
 // 队员跟随逻辑 (Susie / Ralsei)
 // ==========================================
 void OverworldCharacter::updateFollower(const std::deque<PositionRecord>& history, int followerIndex, float dt, bool leaderMoving, GameMap& map) {
+    // 根据队长历史记录延迟追随；历史不足时直接追赶最近记录点
     // 如果队长停下，队员立即停下
     if (!leaderMoving) {
         m_isMoving = false;
@@ -196,7 +212,7 @@ void OverworldCharacter::updateFollower(const std::deque<PositionRecord>& histor
     float dx = diff.x;
     float dy = diff.y;
     float dist = std::sqrt(dx * dx + dy * dy);
-    // 估算理想间距：最新点到目标点的距离作为基准，防止直线奔跑时拉长
+    // 估算理想间距：最新点到目标点的距离作为基准，防止直线奔跑时整体拉长
     float desiredSpacing = std::max(8.f, std::sqrt(std::pow(history.front().position.x - target.position.x, 2.f) +
                                                   std::pow(history.front().position.y - target.position.y, 2.f)));
     float distToLeader = std::sqrt(std::pow(history.front().position.x - cur.x, 2.f) +
@@ -216,7 +232,7 @@ void OverworldCharacter::updateFollower(const std::deque<PositionRecord>& histor
             speed *= std::min(kCatchUpMaxMultiplier, extra);
         }
 
-        // 当前帧最大可移动距离
+        // 当前帧最大可移动距离（到达则直接贴合历史点）
         float step = speed * dt;
         bool moved = false;
         if (dist <= step) {
@@ -244,6 +260,7 @@ void OverworldCharacter::updateFollower(const std::deque<PositionRecord>& histor
 // 动画与辅助函数
 // ==========================================
 void OverworldCharacter::updateAnimation(float dt) {
+    // 移动时按步速推进帧；静止时回到第 0 帧
     if (m_isMoving) {
         m_animTimer += dt;
         float speedMod = m_isRunning ? 1.5f : 1.0f;
@@ -260,7 +277,7 @@ void OverworldCharacter::updateAnimation(float dt) {
 }
 
 sf::FloatRect OverworldCharacter::getBounds() const {
-    // 返回脚底的一个小矩形用于碰撞（缩放后尺寸，集中下半身）
+    // 返回脚底的小矩形用于碰撞（缩放后尺寸，集中下半身）
     sf::Vector2f pos = getPosition(); // 脚底中心
     sf::Vector2f scale(1.f, 1.f);
     if (m_sprite.has_value()) {
@@ -280,7 +297,7 @@ sf::FloatRect OverworldCharacter::getBounds() const {
 void OverworldCharacter::collectDrawItem(std::vector<DrawItem>& outItems) const {
     if (!m_sprite.has_value()) return;
     auto bounds = m_sprite->getGlobalBounds();
-    float yKey = bounds.position.y + bounds.size.y; // 以底部 y 作为排序键
+    float yKey = bounds.position.y + bounds.size.y; // 以底部 y 作为排序键（越低越后画）
     outItems.push_back(DrawItem{ const_cast<sf::Sprite*>(&(*m_sprite)), yKey });
 }
 
@@ -300,6 +317,7 @@ void OverworldCharacter::draw(sf::RenderWindow& window) {
 }
 
 void OverworldCharacter::applyFrame(int direction, int frameIndex) {
+    // 根据方向与帧索引设置纹理，并重新计算尺寸与原点
     if (!m_sprite.has_value()) return;
     int dir = std::clamp(direction, 0, 3);
     int frame = std::clamp(frameIndex, 0, 3);

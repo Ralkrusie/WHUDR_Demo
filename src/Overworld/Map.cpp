@@ -2,6 +2,20 @@
 #include <iostream>
 #include <cmath>
 
+//
+// 地图模块（GameMap）与几何碰撞工具
+// ----------------------------------
+// 职责：
+// - 管理房间背景、墙体碰撞、交互对象、传送触发与动画道具
+// - 提供绘制接口（背景与调试覆盖），以及按 y 深度排序的道具收集
+// - 进行碰撞检测与最小平移向量（MTV）求解，支持旋转矩形（RotRect）
+// 关键约定：
+// - 角色的脚底碰撞箱与墙体/交互碰撞箱使用分离轴定理（SAT）进行检测
+// - 交互区域支持旋转，通过 RotRect 与感应框（AABB）做相交判定
+// - 传送区域使用轴对齐矩形（AABB）并与角色脚底碰撞箱求交
+// - 动画道具以帧序列驱动，外部可将其纳入 y 排序列表与角色一并渲染
+//
+
 namespace {
 inline float dot(const sf::Vector2f& a, const sf::Vector2f& b) { return a.x * b.x + a.y * b.y; }
 inline sf::Vector2f rotate(const sf::Vector2f& v, float rad) {
@@ -10,6 +24,7 @@ inline sf::Vector2f rotate(const sf::Vector2f& v, float rad) {
 }
 
 // 获取旋转矩形四个顶点（按 position 左上角为原点旋转）
+// 用于 SAT：顶点投影到候选轴以求分离或重叠
 std::array<sf::Vector2f, 4> getVertices(const RotRect& rr) {
     float rad = rr.angleDeg * 3.14159265358979323846f / 180.f;
     sf::Vector2f p = rr.position;
@@ -57,7 +72,8 @@ bool overlapsOnAxis(const std::array<sf::Vector2f, 4>& a, const std::array<sf::V
     return !(aMax < bMin || bMax < aMin);
 }
 
-// 旋转矩形 vs 轴对齐矩形相交（含四边轴与 X/Y 轴）
+// 旋转矩形 vs 轴对齐矩形（AABB）相交判定
+// 依据 SAT，在候选轴（旋转矩形两边方向 + X/Y 轴）上投影并检测是否存在分离
 bool intersectsRotAABB(const RotRect& rr, const sf::FloatRect& aabb) {
     auto rv = getVertices(rr);
     auto av = getVertices(aabb);
@@ -71,7 +87,8 @@ bool intersectsRotAABB(const RotRect& rr, const sf::FloatRect& aabb) {
     return true;
 }
 
-// 计算最小平移向量（MTV），用于将 AABB 推出 RotRect；若不相交返回 false
+// 计算最小平移向量（MTV）：将 AABB 推出 RotRect 的最短向量
+// 若不相交返回 false；用于“弹出”角色以避免穿墙
 bool mtvRotAABB(const RotRect& rr, const sf::FloatRect& aabb, sf::Vector2f& outMTV) {
     auto rv = getVertices(rr);
     auto av = getVertices(aabb);
@@ -160,7 +177,7 @@ void GameMap::addWarp(const WarpTrigger& warp)
     m_warps.push_back(warp);
 }
 
-// 兼容旧接口：目前仅调用 clear + setBackground，具体内容应由房间文件构建
+// 兼容旧接口：仅执行 clear + setBackground；房间细节应由专用构建器填充
 void GameMap::load(const std::string& mapName)
 {
     clear();
@@ -198,7 +215,7 @@ void GameMap::gatherDrawItems(std::vector<DrawItem>& outItems)
     for (auto& p : m_props) {
         if (!p.sprite.has_value()) continue;
         auto bounds = p.sprite->getGlobalBounds();
-        float yKey = bounds.position.y + bounds.size.y; // 使用底部 y 做深度
+        float yKey = bounds.position.y + bounds.size.y; // 使用底部 y 做深度排序键
         outItems.push_back(DrawItem{ &(*p.sprite), yKey });
     }
 }

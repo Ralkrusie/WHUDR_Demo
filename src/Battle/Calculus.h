@@ -1,15 +1,4 @@
-﻿/*
-高数敌人的技能逻辑，例如：
-
-求导攻击
-
-泰勒攻击
-
-不定积分攻击
-
-生成不同模式的弹幕?
-*/
-#pragma once
+﻿#pragma once
 #include <vector>
 #include "Battle/Enemy.h"
 

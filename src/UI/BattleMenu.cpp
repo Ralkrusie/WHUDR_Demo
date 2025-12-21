@@ -5,6 +5,22 @@
 #include <algorithm>
 #include <cctype>
 
+//
+// 战斗菜单（BattleMenu）
+// ---------------------
+// 职责：
+// - 指挥每回合的玩家决策：选择角色、行动、子选项与目标
+// - 阶段状态机：Hero → Action → Option → Target → Done
+// - 游标管理：`m_heroCursor`/`m_actionCursor`/`m_optionCursor`/`m_targetCursor`
+// - 结果输出：在确认后构造 `BattleCommand` 返回给战斗状态
+// - 绘制 UI：状态栏（头像/HP）、行动图标、子选项列表与敌人信息卡片
+// 关键约定：
+// - `ActionType` 分为 Fight/Act/Item/Spare/Defend；其中 Fight/Spare 直接选目标，Act/Item 需先选子选项
+// - Item 目标为我方成员，其余目标为敌人
+// - 头像 variant 根据动作/完成状态选择（见 `actionToHeadVariant`）
+// - 面板引入动画使用 `easeOutCubic` 实现上滑效果
+//
+
 namespace {
 const sf::Color kPanelBg{0, 0, 0, 220};
 const sf::Color kPanelOutline{80, 80, 80, 255};
@@ -20,12 +36,14 @@ std::string toLowerId(std::string id) {
 	return id;
 }
 
+// 缓动函数：立方缓出（上滑引入时更自然）
 float easeOutCubic(float t) {
 	t = std::clamp(t, 0.f, 1.f);
 	float inv = 1.f - t;
 	return 1.f - inv * inv * inv;
 }
 
+// 将行动类型映射到头像 variant（用于状态栏显示）
 int actionToHeadVariant(ActionType action) {
 	switch (action) {
 	case ActionType::Fight: return 1;
@@ -38,6 +56,7 @@ int actionToHeadVariant(ActionType action) {
 }
 }
 
+// 构造：加载字体、心形指示器与行动图标；预载头像的多状态贴图
 BattleMenu::BattleMenu()
 {
 	m_actions = { ActionType::Fight, ActionType::Act, ActionType::Item, ActionType::Spare, ActionType::Defend };
@@ -83,6 +102,7 @@ BattleMenu::BattleMenu()
 	loadHeadSet("ralsei");
 }
 
+// 根据行动类型刷新子选项列表（Act 来源于当前角色预设，Item 来源于全局背包）
 void BattleMenu::refreshOptionsForAction(ActionType action)
 {
 	m_options.clear();
@@ -138,11 +158,13 @@ void BattleMenu::refreshOptionsForAction(ActionType action)
 	}
 }
 
+// 判断该行动是否需要选择目标（Item 目标为我方，其余为敌人）
 bool BattleMenu::actionNeedsTarget(ActionType action) const
 {
 	return action == ActionType::Fight || action == ActionType::Act || action == ActionType::Spare || action == ActionType::Item;
 }
 
+// 开始一回合：绑定队伍与敌人引用，重置游标与阶段，并触发面板引入动画
 void BattleMenu::beginTurn(const std::vector<HeroRuntime>& party, const std::vector<Enemy>& enemies)
 {
 	m_partyRef = &party;
@@ -167,6 +189,7 @@ void BattleMenu::beginTurn(const std::vector<HeroRuntime>& party, const std::vec
 	}
 }
 
+// 输入处理：分阶段驱动游标与确认，最终产出 BattleCommand
 BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 {
 	MenuResult result;
@@ -186,6 +209,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 		return -1;
 	};
 
+	// 阶段 1：选择角色（Hero）
 	if (m_stage == Stage::Hero) {
 		if (allDone()) { m_stage = Stage::Done; m_active = false; return result; }
 		if (m_doneHeroes[m_heroCursor]) {
@@ -227,6 +251,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			}
 			AudioManager::getInstance().playSound("button_move");
 		}
+	// 阶段 2：选择行动（Action）
 	} else if (m_stage == Stage::Action) {
 		const int actionCount = static_cast<int>(m_actions.size());
 		if (InputManager::isPressed(Action::Left, window)) {
@@ -270,6 +295,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			m_stage = Stage::Hero;
 			AudioManager::getInstance().playSound("button_move");
 		}
+	// 阶段 3：选择子选项（Option）
 	} else if (m_stage == Stage::Option) {
 		if (InputManager::isPressed(Action::Up, window)) {
 			if (!m_options.empty()) {
@@ -300,6 +326,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			m_stage = Stage::Target;
 			m_targetCursor = 0;
 		}
+	// 阶段 4：选择目标（Target）
 	} else if (m_stage == Stage::Target) {
 		ActionType chosen = m_actions[m_actionCursor];
 		bool targetingHero = (chosen == ActionType::Item);
@@ -350,6 +377,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 	return result;
 }
 
+// 动效更新：面板引入缓动并记录是否已展示过 UI（避免重复动画）
 void BattleMenu::update(float dt)
 {
 	if (m_panelReveal < 1.f) {
@@ -360,6 +388,7 @@ void BattleMenu::update(float dt)
 	}
 }
 
+// 绘制状态栏：每个队员的头像、姓名与 HP 条（选中时上移高亮）
 void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 {
 	if (!m_partyRef) return;
@@ -456,13 +485,11 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 		hpBar.setPosition({x + 76.f, y + 22.f});
 		hpBar.setFillColor(sf::Color(30, 30, 30));
 		window.draw(hpBar);
-		// Use hero accent color for HP fill to match highlight
 		sf::Color hpColor = accent;
 		sf::RectangleShape hpFill({barW * ratio, 10.f});
 		hpFill.setPosition({x + 76.f, y + 22.f});
 		hpFill.setFillColor(hpColor);
 		window.draw(hpFill);
-		// Lost HP segment in red
 		if (ratio < 1.f) {
 			float lostW = barW * (1.f - ratio);
 			sf::RectangleShape hpLost({lostW, 10.f});
@@ -470,7 +497,6 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 			hpLost.setFillColor(kHPRed);
 			window.draw(hpLost);
 		}
-		// Remove right-end accent cap to avoid color mismatch next to red segment
 
 		sf::Text hpText(m_font, sf::String((std::to_string(h.hp) + std::string("/ ") + std::to_string(h.maxHP)).c_str()), 12);
 		hpText.setFillColor(sf::Color::White);
@@ -479,6 +505,7 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 	}
 }
 
+// 绘制行动图标：居中排列，当前行动高亮；在 Action/Option/Target 阶段显示
 void BattleMenu::drawActions(sf::RenderWindow& window, float yOffset) const
 {
 	const sf::Vector2f viewSize = window.getView().getSize();
@@ -521,6 +548,9 @@ void BattleMenu::drawActions(sf::RenderWindow& window, float yOffset) const
 	}
 }
 
+// 绘制子选项或目标列表：
+// - Option 阶段：左侧列表 + 右侧描述；心形指示当前项
+// - Target 阶段：Item → 我方列表；否则 → 敌人卡片（含 HP/Mercy 条）
 void BattleMenu::drawOptions(sf::RenderWindow& window, float yOffset) const
 {
 	const sf::Vector2f viewSize = window.getView().getSize();
@@ -670,6 +700,7 @@ void BattleMenu::drawOptions(sf::RenderWindow& window, float yOffset) const
 	window.draw(desc);
 }
 
+// 顶层绘制：面板背景与边框 → 状态栏 → 行动图标 → 子选项/目标区
 void BattleMenu::draw(sf::RenderWindow& window) const
 {
 	const sf::Vector2f viewSize = window.getView().getSize();

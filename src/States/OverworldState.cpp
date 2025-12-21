@@ -12,8 +12,26 @@
 #include <cstdint>
 #include <iostream>
 
+//
+// 探索状态（OverworldState）模块说明
+// ------------------------------------
+// 负责游戏在“探索/行走”场景下的主循环，包括：
+// - 资源加载：字体、背景贴图、背景音乐与角色行走贴图集
+// - 输入分发：退出、调试开关、菜单/背包、对话锁定下的选择与推进
+// - 地图交互：探测“可交互物体”（存档点、道具、战斗触发等）并驱动 UI
+// - 队伍编队：队长与跟随者的历史轨迹与跟随行为
+// - 传送与渐变：房间切换的淡入淡出状态机
+// - 渲染管理：背景、地图项、角色、对话框、背包 UI、调试覆盖与渐变遮罩
+// 关键约定：
+// - 角色行走贴图按上下左右四方向、每方向四帧组织为 SpriteSet
+// - 交互对象通过 Map::checkInteraction 以“脚前方小矩形传感框”检出
+// - 渐变状态机分 None/Out/In；Out 完成后实际切房，随后 In 淡入
+// - 背包 UI 打开时锁定输入，不更新角色移动，关闭后恢复
+//
+
 namespace {
-//贴图路径
+// 贴图路径：为 Kris 角色构造四个方向的 4 帧行走序列
+// 返回的 SpriteSet.frames 为 4 × 4 字符串数组，依次为 Down/Left/Right/Up
 SpriteSet makeKrisSprites() {
     SpriteSet set{};
     set.frames = {
@@ -41,6 +59,8 @@ SpriteSet makeKrisSprites() {
     return set;
 }
 
+// 贴图路径：为 Ralsei 角色构造四方向行走帧序列（每方向 4 帧）
+// 命名约定：assets/sprite/Ralsei/spr_ralsei_walk_<dir>/spr_ralsei_walk_<dir>_<frame>.png
 SpriteSet makeRalseiSprites() {
     SpriteSet set{};
     set.frames = {
@@ -52,6 +72,8 @@ SpriteSet makeRalseiSprites() {
     return set;
 }
 
+// 贴图路径：为 Susie 角色构造四方向行走帧序列（每方向 4 帧）
+// 资源名后缀 “_dw” 与美术导出约定一致
 SpriteSet makeSusieSprites() {
     SpriteSet set{};
     set.frames = {
@@ -63,6 +85,15 @@ SpriteSet makeSusieSprites() {
     return set;
 }
 
+// 文本换行（按像素宽度）
+// 参数：
+// - input：要渲染的 sf::String（支持多语言，含中文）
+// - maxWidth：最大行宽（像素），超过则在词/字符处换行
+// - font/charSize：测量用字体与字号
+// 方法：
+// - 使用 sf::Text 实例动态设置 trial 文本并读取其 LocalBounds 宽度
+// - 若超过 maxWidth 且当前行非空，则输出当前行并插入换行，重置行缓冲
+// - 保留显式换行符 '\n' 的处理；最终追加最后一行
 sf::String wrapTextToWidth(const sf::String& input, float maxWidth, const sf::Font& font, unsigned int charSize) {
     sf::Text measure(font, "", charSize);
     sf::String currentLine;
@@ -92,6 +123,7 @@ sf::String wrapTextToWidth(const sf::String& input, float maxWidth, const sf::Fo
 }
 }
 
+// 构造探索状态：加载资源、初始化队伍与地图，并启动背景音乐
 OverworldState::OverworldState(Game& game)
     : BaseState(game),
       m_font("assets/font/Common.ttf"),
@@ -102,7 +134,7 @@ OverworldState::OverworldState(Game& game)
     m_ralsei(game, makeRalseiSprites()),
     m_susie(game, makeSusieSprites())
 {
-    // 初始化探索状态的元素
+    // 初始化探索状态的元素（字体/背景/音乐）
 
     if (!m_font.openFromFile("assets/font/Common.ttf")) {
         // 处理字体加载失败
@@ -126,7 +158,7 @@ OverworldState::OverworldState(Game& game)
     m_backgroundMusic.setVolume(30.f); // 设置适当的音量
     m_backgroundMusic.play();
 
-    // 初始化队伍顺序（可根据游戏逻辑动态调整）
+    // 初始化队伍顺序：默认 Kris 为队长，Susie、Ralsei 跟随
     m_party = { &m_kris, &m_susie, &m_ralsei };
     m_leaderIndex = 0; // Kris 为队长
 
@@ -145,8 +177,8 @@ OverworldState::OverworldState(Game& game)
         m_inventoryHeart.reset();
     }
 
-    // 加载地图（房间构建器）并设置初始位置
-    // 如果是从“继续游戏”进入，这里会依据 Global::currentMRoomName 来决定出生点
+    // 加载地图（房间构建器）并设置初始位置：
+    // 若从“继续游戏”进入，依据 Global::currentMRoomName 决定出生点；否则默认教室
     std::string desiredRoom = Global::currentMRoomName.empty() ? std::string("AlphysClass") : Global::currentMRoomName;
     // 兜底：如果不是已知房间，则回落到 AlphysClass（防止默认值为 "Title" 导致地图为空）
     if (desiredRoom != "AlphysClass" && desiredRoom != "SecretRoom") {
@@ -154,16 +186,13 @@ OverworldState::OverworldState(Game& game)
     }
     sf::Vector2f spawn = {350.f, 300.f};
     if (desiredRoom == "SecretRoom") {
-        // 存档点旁固定位置出生
+        // 秘密房：存档点旁固定位置出生
         spawn = {500.f, 320.f};
     }
     loadRoom(desiredRoom, spawn);
-
-    // 3. 初始化摄像头 (View)
-    // 让摄像机对准 Kris
-    //game.getWorldView().setCenter(m_kris.getCenter());
 }
 
+// 顶层输入事件处理：退出键、渐变锁、背包、对话锁、调试、菜单与交互
 void OverworldState::handleEvent() {
 // 1. 全局退出检查
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape)) {
@@ -175,7 +204,7 @@ void OverworldState::handleEvent() {
         return;
     }
 
-    // 物品栏优先处理（暂停移动）
+    // 物品栏优先处理（暂停移动）：打开时仅处理背包输入
     if (m_inventoryOpen) {
         handleInventoryInput();
         return;
@@ -206,7 +235,7 @@ void OverworldState::handleEvent() {
                     }
                 }
             } else {
-                // 普通文本对话：按确认推进/关闭
+                // 普通文本对话：按确认推进/关闭；对话结束后可能触发待处理动作
                 if (InputManager::isPressed(Action::Confirm, m_game.getWindow())) {
                     if (m_dialogueBox.onConfirm()) {
                         // 对话结束后执行待处理动作（如拾取道具）
@@ -223,7 +252,7 @@ void OverworldState::handleEvent() {
                             const sf::Vector2f curPos = getLeader().getPosition();
                             loadRoom(m_currentRoom, curPos);
                         } else if (m_pendingAction == PendingAction::StartBattleCalculus) {
-                            // 收集三人当前在 Overworld 的位置作为入场起点
+                            // 进入战斗：收集三人当前在 Overworld 的位置作为入场起点
                             std::vector<sf::Vector2f> starts;
                             starts.reserve(m_party.size());
                             for (auto* ch : m_party) {
@@ -244,7 +273,7 @@ void OverworldState::handleEvent() {
         return; // 既然被锁定了，就不要执行下面的移动/交互逻辑
     }
 
-    // 调试开关：按 D 切换可视化矩形
+    // 调试开关：按 D 切换地图碰撞/交互的可视化矩形
     if (InputManager::isPressed(Action::Debug, m_game.getWindow())) {
         m_debugDrawEnabled = !m_debugDrawEnabled;
         m_map.setDebugDraw(m_debugDrawEnabled);
@@ -256,13 +285,13 @@ void OverworldState::handleEvent() {
         return;
     }
 
-    // 4. 交互检测 (按 Z 或 Enter)
+    // 4. 交互检测 (按 Z 或 Enter)：在脚前探测框内检索可交互对象
     if (InputManager::isPressed(Action::Confirm, m_game.getWindow())) {
         checkInteraction();
     }
 }
 
-// 辅助函数：把具体的交互判定逻辑拆出来，保持 handleInput 干净
+// 辅助函数：交互判定逻辑（把具体处理拆出来，保持 handleEvent 简洁）
 void OverworldState::checkInteraction() {
     // A. 获取玩家中心点（当前队长）
     OverworldCharacter& leader = getLeader();
@@ -270,7 +299,7 @@ void OverworldState::checkInteraction() {
     int dir = leader.getDirection();
 
     // B. 创建探测框 (Sensor)
-    // 假设探测距离是 40 像素，探测范围大小是 20x20
+    // 探测距离 reach：脚前 40 像素；探测范围 size：20×20 像素
     float reach = 40.f;
     float size = 20.f;
     sf::Vector2f sensorPos = playerPos;
@@ -289,7 +318,7 @@ void OverworldState::checkInteraction() {
     
     sf::FloatRect sensorRect(sensorPos, {size, size});
 
-    // C. 询问地图：这个框里有东西吗？
+    // C. 询问地图：这个框里有可交互对象吗？返回 Interactable*，否则 nullptr
     // checkInteraction 返回一个 Interactable 指针，没东西返回 nullptr
     auto* obj = m_map.checkInteraction(sensorRect);
     
@@ -309,7 +338,7 @@ void OverworldState::checkInteraction() {
             return;
         }
 
-        // 特殊：Secret Room 中心道具（HolyMantle），一次性拾取
+        // 特殊：Secret Room 中心道具（HolyMantle），一次性拾取（获取后移除）
         if (obj->textID == "holy_mantle") {
             // 若已获得则不再处理（地图构建已避免生成，这里再兜底）
             const sf::String prompt = L"你获得了神圣斗篷！";
@@ -322,7 +351,7 @@ void OverworldState::checkInteraction() {
             return;
         }
 
-        // 教室里的高数题战斗触发
+        // 教室里的高数题战斗触发：展示提示后切入战斗状态
         if (obj->textID == "talk_test_alphys") {
             const sf::String prompt = L"只是一些高数卷子...";
             bool started = m_dialogueBox.start(prompt, nullptr, std::optional<std::string>{"text"});
@@ -333,7 +362,7 @@ void OverworldState::checkInteraction() {
             return;
         }
 
-        // 普通交互：直接把 textID 当展示文本
+        // 普通交互：直接把 textID 当展示文本（资源即文本内容或键）
         bool started = m_dialogueBox.start(obj->textID, nullptr, std::nullopt);
         if (started) {
             m_isInputLocked = true;
@@ -341,6 +370,7 @@ void OverworldState::checkInteraction() {
     }
 }
 
+// 主更新循环：地图动画、渐变优先、背包暂停、队伍跟随与传送
 void OverworldState::update(float dt) {
     // 地图内动画（例如存档点）始终更新
     m_map.update(dt);
@@ -365,7 +395,7 @@ void OverworldState::update(float dt) {
 
 
 
-    // 更新探索状态的逻辑
+    // 更新探索状态的逻辑（队长移动与跟随者历史）
     OverworldCharacter& leader = getLeader();
 
     leader.updateLeader(dt, m_map);
@@ -382,7 +412,7 @@ void OverworldState::update(float dt) {
         m_leaderHistory.push_front(rec);
     }
 
-    // 传送检查：使用脚底碰撞箱
+    // 传送检查：使用脚底碰撞箱命中 WarpTrigger 后发起淡出
     if (WarpTrigger* warp = m_map.checkWarp(leader.getBounds())) {
         startFadeToRoom(warp->targetMap, warp->targetPos);
         return;
@@ -396,6 +426,7 @@ void OverworldState::update(float dt) {
     }
 }
 
+// 绘制流程：背景 → 地图项+角色（按 y 排序） → 对话框 → 背包 UI → 调试 → 渐变遮罩
 void OverworldState::draw(sf::RenderWindow& window) {
     // 1) 背景
     m_map.drawBackground(window);
@@ -435,10 +466,12 @@ void OverworldState::draw(sf::RenderWindow& window) {
 
 }
 
+// 获取当前队长引用（便于统一访问）
 OverworldCharacter& OverworldState::getLeader() {
     return *m_party[m_leaderIndex];
 }
 
+// 构建并加载房间：同步全局房间名、重置队伍位置与历史
 void OverworldState::loadRoom(const std::string& roomName, const sf::Vector2f& playerPos)
 {
     m_currentRoom = roomName;
@@ -462,6 +495,7 @@ void OverworldState::loadRoom(const std::string& roomName, const sf::Vector2f& p
     m_leaderHistory.push_front(getLeader().getRecord());
 }
 
+// 开始一次房间切换的渐变：先淡出（Out），Out 完成后执行实际换房，再淡入（In）
 void OverworldState::startFadeToRoom(const std::string& roomName, const sf::Vector2f& spawn)
 {
     m_hasPendingWarp = true;
@@ -473,6 +507,7 @@ void OverworldState::startFadeToRoom(const std::string& roomName, const sf::Vect
     m_isInputLocked = true;
 }
 
+// 渐变更新：根据阶段（Out/In）推进 alpha 与计时器
 void OverworldState::updateFade(float dt)
 {
     if (m_fadePhase == FadePhase::None) return;
@@ -501,6 +536,7 @@ void OverworldState::updateFade(float dt)
     }
 }
 
+// 绘制黑色渐变遮罩（覆盖在最上层），alpha 由状态机控制
 void OverworldState::drawFade(sf::RenderWindow& window)
 {
     if (m_fadePhase == FadePhase::None && m_fadeAlpha <= 0.f) return;
@@ -510,6 +546,7 @@ void OverworldState::drawFade(sf::RenderWindow& window)
     window.draw(mask);
 }
 
+// 打开背包 UI：锁定输入，规范化游标位置
 void OverworldState::openInventory()
 {
     m_inventoryOpen = true;
@@ -525,6 +562,7 @@ void OverworldState::openInventory()
     m_isInputLocked = true;
 }
 
+// 关闭背包 UI：解除输入锁，复位游标
 void OverworldState::closeInventory()
 {
     m_inventoryOpen = false;
@@ -533,6 +571,7 @@ void OverworldState::closeInventory()
     m_isInputLocked = false;
 }
 
+// 背包输入：上下移动条目、左右选择动作（使用/丢弃），确认与取消
 void OverworldState::handleInventoryInput()
 {
     sf::RenderWindow& win = m_game.getWindow();
@@ -569,7 +608,7 @@ void OverworldState::handleInventoryInput()
             m_actionCursor = 0;
         }
     } else {
-        // 选择 使用/丢弃
+        // 选择 使用/丢弃 动作（左右切换，确认执行，取消返回）
         if (InputManager::isPressed(Action::Left, win)) {
             AudioManager::getInstance().playSound("button_move");
             m_actionCursor = 0;
@@ -591,7 +630,7 @@ void OverworldState::handleInventoryInput()
             }
             auto& inv = Global::inventory;
             if (m_actionCursor == 0) {
-                // 使用
+                // 使用：示例为“神圣斗篷”装备到 Kris 的第二护甲槽
                 const std::string itemId = inv[m_itemCursor].id;
                 bool consumed = false;
                 if (itemId == "HolyMantle") {
@@ -617,7 +656,7 @@ void OverworldState::handleInventoryInput()
                 m_selectingAction = false;
                 m_actionCursor = 0;
             } else {
-                // 丢弃
+                // 丢弃：移除物品；若为“神圣斗篷”，同步清除全局标记
                 const std::string itemId = inv[m_itemCursor].id;
                 inv.erase(inv.begin() + m_itemCursor);
                 if (itemId == "HolyMantle") {
@@ -638,6 +677,7 @@ void OverworldState::handleInventoryInput()
     }
 }
 
+// 背包绘制：整体布局、标题与描述区、列表与光标心形、底部动作区
 void OverworldState::drawInventory(sf::RenderWindow& window)
 {
     const sf::Vector2f boxSize{520.f, 360.f};
@@ -661,7 +701,7 @@ void OverworldState::drawInventory(sf::RenderWindow& window)
     title.setPosition({boxPos.x + boxSize.x * 0.5f - title.getGlobalBounds().size.x * 0.5f, boxPos.y + 12.f});
     window.draw(title);
 
-    // 描述区（上方留白）
+    // 描述区：显示物品说明或名称，超宽按像素换行
     sf::String descStr = L"没有物品。";
     if (!Global::inventory.empty() && m_itemCursor < static_cast<int>(Global::inventory.size())) {
         const auto& item = Global::inventory[m_itemCursor];
@@ -676,7 +716,7 @@ void OverworldState::drawInventory(sf::RenderWindow& window)
     desc.setPosition({boxPos.x + 20.f, boxPos.y + 58.f});
     window.draw(desc);
 
-    // 列表
+    // 列表：逐行渲染；选中行高亮并在左侧绘制心形指示器
     float listStartY = boxPos.y + 110.f;
     const float lineH = 32.f;
     for (std::size_t i = 0; i < Global::inventory.size(); ++i) {
@@ -695,7 +735,7 @@ void OverworldState::drawInventory(sf::RenderWindow& window)
         window.draw(row);
     }
 
-    // 底部操作
+    // 底部操作：两项横向排列（使用/丢弃），选中项高亮并绘制心形
     const std::array<sf::String, 2> actions = { L"使用", L"丢弃" };
     float actionY = boxPos.y + boxSize.y - 50.f;
     for (int i = 0; i < 2; ++i) {
