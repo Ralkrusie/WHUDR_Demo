@@ -4,6 +4,7 @@
 #include <vector>
 #include <algorithm>
 #include <map>
+#include <map>
 #include "Battle/Battle.h"
 #include "Battle/Enemy.h"
 
@@ -72,6 +73,9 @@ private:
 	std::optional<ActData> m_pendingAct;
 	std::optional<std::string> m_pendingItem;
 	std::vector<std::optional<ActionType>> m_committedActions;
+	std::vector<std::optional<std::string>> m_committedItems; // 每个角色本回合已提交的物品ID
+	std::map<std::string, int> m_reservedItemCounts; // 本回合暂存占用的物品计数（支持同名多件）
+	std::vector<int> m_completedOrder; // 已完成角色的顺序栈（用于多次撤销）
 	float m_panelReveal = 0.f; // 0 -> hidden below, 1 -> fully shown
 	bool m_hasShownUI = false;
 

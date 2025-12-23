@@ -147,8 +147,8 @@ BattleState::BattleState(Game& game,
 	// 准备队伍可视化（左侧垂直排列）
 	m_partyVisuals.resize(3);
 	const std::array<sf::Vector2f, 3> targets = { sf::Vector2f{95.f, 100.f}, sf::Vector2f{50.f, 185.f}, sf::Vector2f{90.f, 265.f} };
-	const float desiredIntroTime = 0.8f; // 目标：入场约 0.8s 完成
-	const float minIntroSpeed = 60.f;    // 较低的最小速度，避免瞬移
+	const float desiredIntroTime = 1.f; // 目标：入场约 0.8s 完成
+	const float minIntroSpeed = 40.f;    // 较低的最小速度，避免瞬移
 	for (int i = 0; i < 3; ++i) {
 		sf::Vector2f start = (i < static_cast<int>(m_partyStarts.size())) ? m_partyStarts[i] : sf::Vector2f{-80.f, 120.f + 60.f * i};
 		sf::Vector2f toTarget{ targets[i].x - start.x, targets[i].y - start.y };
@@ -183,7 +183,7 @@ BattleState::BattleState(Game& game,
 		"assets/sprite/Kris/spr_krisb_idle/spr_krisb_idle_4.png",
 		"assets/sprite/Kris/spr_krisb_idle/spr_krisb_idle_5.png"
 	});
-	m_partyVisuals[0].setIntroFrames(std::move(krisIntro), 0.08f);
+	m_partyVisuals[0].setIntroFrames(std::move(krisIntro), 0.128f);
 	m_partyVisuals[0].setIdleFrames(std::move(krisIdle), 0.12f);
 
 	auto susieIdle = BattleActorVisual::loadTextures({
@@ -199,7 +199,7 @@ BattleState::BattleState(Game& game,
 		"assets/sprite/Susie/spr_susie_attack/spr_susie_attack_2.png",
 		"assets/sprite/Susie/spr_susie_attack/spr_susie_attack_3.png"
 	});
-	m_partyVisuals[1].setIntroFrames(std::move(susieIntro), 0.12f);
+	m_partyVisuals[1].setIntroFrames(std::move(susieIntro), 0.128f);
 	m_partyVisuals[1].setIdleFrames(susieIdle, 0.08f);
 	auto susieIdle2 = BattleActorVisual::loadTextures({
 		"assets/sprite/Susie/spr_susie_idle/spr_susie_idle_0.png",
@@ -229,7 +229,7 @@ BattleState::BattleState(Game& game,
 		"assets/sprite/Ralsei/spr_ralsei_idle/spr_ralsei_idle_3.png",
 		"assets/sprite/Ralsei/spr_ralsei_idle/spr_ralsei_idle_4.png"
 	});
-	m_partyVisuals[2].setIntroFrames(std::move(ralseiIntro), 0.1f);
+	m_partyVisuals[2].setIntroFrames(std::move(ralseiIntro), 0.128f);
 	m_partyVisuals[2].setIdleFrames(std::move(ralseiIdle), 0.12f);
 
 	for (auto& v : m_partyVisuals) v.startIntro();
@@ -305,7 +305,7 @@ void BattleState::update(float dt)
 			m_introHoldActive = false;
 		}
 	}
-	// 背景帧动画（不做渐变）
+	// 背景帧动画（伴随渐变淡入）
 	if (!m_battleBgFrames.empty()) {
 		m_battleBgTimer += dt;
 		while (m_battleBgTimer >= m_battleBgFrameTime && !m_battleBgFrames.empty()) {
@@ -314,7 +314,11 @@ void BattleState::update(float dt)
 			if (m_battleBgSprite) m_battleBgSprite->setTexture(m_battleBgFrames[m_battleBgIndex], true);
 		}
 	}
-	// 删除背景渐变：不再按 dt 累加淡入值
+	// 背景渐变：按 dt 累加淡入值（0 → 1）
+	if (m_bgFadeAlpha < 1.f) {
+		m_bgFadeTimer += dt;
+		m_bgFadeAlpha = std::min(1.f, m_bgFadeTimer / std::max(0.0001f, m_bgFadeDuration));
+	}
 
 	// 对话打字机更新（胜利/退出等）
 	m_dialogue.update(dt);
@@ -383,10 +387,22 @@ void BattleState::update(float dt)
 // - 绘制队伍角色入场/待机、敌人信息、底部菜单与 Act 文本、对话框
 void BattleState::draw(sf::RenderWindow& window)
 {
-	// 背景：直接绘制战斗背景
+	// 背景：交叉淡入（Overworld → Battle）
 	window.clear(sf::Color(12, 12, 24));
+	// 先绘制 Overworld 背景（随渐变淡出）
+	if (m_overworldBgSprite) {
+		sf::Sprite ow = *m_overworldBgSprite;
+		sf::Color c = ow.getColor();
+		c.a = static_cast<std::uint8_t>(255.f * std::clamp(1.f - m_bgFadeAlpha, 0.f, 1.f));
+		ow.setColor(c);
+		window.draw(ow);
+	}
+	// 再绘制战斗背景（随渐变淡入）
 	if (!m_battleBgFrames.empty() && m_battleBgSprite) {
 		sf::Sprite bg = *m_battleBgSprite;
+		sf::Color c = bg.getColor();
+		c.a = static_cast<std::uint8_t>(255.f * std::clamp(m_bgFadeAlpha, 0.f, 1.f));
+		bg.setColor(c);
 		window.draw(bg);
 	}
 	// 弹幕盒不再显示，仅保留逻辑边界（入场保留期内不绘制 UI）

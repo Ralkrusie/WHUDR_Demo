@@ -62,7 +62,7 @@ BattleMenu::BattleMenu()
 	m_actions = { ActionType::Fight, ActionType::Act, ActionType::Item, ActionType::Spare, ActionType::Defend };
 	[[maybe_unused]] bool fontOk = m_font.openFromFile("assets/font/Common.ttf");
 
-	m_heartTex.loadFromFile("assets/sprite/Heart/spr_heart_0.png");
+	[[maybe_unused]] bool heartOk = m_heartTex.loadFromFile("assets/sprite/Heart/spr_heart_0.png");
 	m_heartTex.setSmooth(false);
 	m_heart.emplace(m_heartTex);
 	if (m_heart) m_heart->setScale({1.0f, 1.0f});
@@ -124,16 +124,17 @@ void BattleMenu::refreshOptionsForAction(ActionType action)
 				}
 				auto heroId = toLowerId((*m_partyRef)[m_currentHero].id);
 				if (heroId == "kris") {
+					acts.push_back({ sf::String(L"查看"), sf::String(L"注意到"), ActData{ sf::String(L"查看"), sf::String(L"你试着使用瞪眼法...\n可惜你不是拉马努金。"), 0, 0, 15.f }, std::nullopt });
 					acts.push_back({ sf::String(L"计算"), sf::String(L"尝试计算化简"), ActData{ sf::String(L"计算"), sf::String(L"你尝试着进行计算"), 10, 0, 10.f }, std::nullopt });
 					acts.push_back({ sf::String(L"凑微分"), sf::String(L"换元（不包括三角换元）"), ActData{ sf::String(L"凑微分"), sf::String(L"你进行了凑微分变形"), 6, 0, 18.f }, std::nullopt });
 				} else if (heroId == "susie") {
-					acts.push_back({ sf::String(L"逃跑"), sf::String(L"跑路"), ActData{ sf::String(L"逃跑"), sf::String(L"Susie尝试逃跑...\nRalsei制止了她!"), 8, 0, 8.f }, std::nullopt });
+					acts.push_back({ sf::String(L"逃跑"), sf::String(L"给你路打油"), ActData{ sf::String(L"逃跑"), sf::String(L"Susie尝试逃跑...\nRalsei制止了她!"), 8, 0, 8.f }, std::nullopt });
 					acts.push_back({ sf::String(L"拆分积分"), sf::String(L"将区间拆分后积分"), ActData{ sf::String(L"拆分积分"), sf::String(L"Susie进行了拆分积分"), 14, 0, 6.f }, std::nullopt });
 				} else if (heroId == "ralsei") {
 					acts.push_back({ sf::String(L"三角代换"), sf::String(L"使用三角代换求解"), ActData{ sf::String(L"三角代换"), sf::String(L"Ralsei使用了三角代换。"), 0, 0, 22.f }, std::nullopt });
 					acts.push_back({ sf::String(L"三角恒等变换"), sf::String(L"三角恒等变换"), ActData{ sf::String(L"三角恒等变换"), sf::String(L"Ralsei使用了三角恒等变换。"), 0, 0, 28.f }, std::nullopt });
 				} else {
-					acts.push_back({ sf::String(L"查看"), sf::String(L"瞪眼法"), ActData{ sf::String(L"查看"), sf::String(L"可惜，你不是拉马努金。"), 0, 0, 15.f }, std::nullopt });
+					acts.push_back({ sf::String(L"查看"), sf::String(L"注意到"), ActData{ sf::String(L"查看"), sf::String(L"你试着使用瞪眼法...\n可惜你不是拉马努金。"), 0, 0, 15.f }, std::nullopt });
 				}
 				return acts;
 			}();
@@ -144,8 +145,21 @@ void BattleMenu::refreshOptionsForAction(ActionType action)
 		if (Global::inventory.empty()) {
 			m_options.push_back({ sf::String(L"无物品"), sf::String(L"包里什么也没有"), std::nullopt, std::nullopt });
 		} else {
+			// 对每种ID，跳过已占用的数量，再展示剩余实例
+			std::map<std::string, int> reservedConsumed;
 			for (const auto& it : Global::inventory) {
+				int reserved = 0;
+				auto rcIt = m_reservedItemCounts.find(it.id);
+				if (rcIt != m_reservedItemCounts.end()) reserved = std::max(0, rcIt->second);
+				int consumed = reservedConsumed[it.id];
+				if (consumed < reserved) {
+					reservedConsumed[it.id] = consumed + 1;
+					continue; // 此实例被占用，跳过
+				}
 				m_options.push_back({ it.name, it.info, std::nullopt, it.id });
+			}
+			if (m_options.empty()) {
+				m_options.push_back({ sf::String(L"无可用物品"), sf::String(L"已被其他角色占用"), std::nullopt, std::nullopt });
 			}
 		}
 		break;
@@ -176,6 +190,9 @@ void BattleMenu::beginTurn(const std::vector<HeroRuntime>& party, const std::vec
 	m_lastCompletedHero = -1;
 	m_doneHeroes.assign(m_partySize, false);
 	m_committedActions.assign(m_partySize, std::nullopt);
+	m_committedItems.assign(m_partySize, std::nullopt);
+	m_reservedItemCounts.clear();
+	m_completedOrder.clear();
 	m_actionCursor = 0;
 	m_targetCursor = 0;
 	m_optionCursor = 0;
@@ -236,13 +253,27 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			}
 		}
 		if (InputManager::isPressed(Action::Cancel, window)) {
-			if (m_lastCompletedHero >= 0 && m_lastCompletedHero < m_partySize) {
-				m_doneHeroes[m_lastCompletedHero] = false;
-				if (static_cast<int>(m_committedActions.size()) > m_lastCompletedHero) {
-					m_committedActions[m_lastCompletedHero].reset();
+			if (!m_completedOrder.empty()) {
+				int heroToUndo = m_completedOrder.back();
+				m_completedOrder.pop_back();
+				m_doneHeroes[heroToUndo] = false;
+				if (static_cast<int>(m_committedActions.size()) > heroToUndo) {
+					// 若撤销的是物品，减少占用计数并清除已提交物品
+					if (m_committedActions[heroToUndo].has_value() && *m_committedActions[heroToUndo] == ActionType::Item) {
+						if (static_cast<int>(m_committedItems.size()) > heroToUndo && m_committedItems[heroToUndo].has_value()) {
+							auto it = m_reservedItemCounts.find(*m_committedItems[heroToUndo]);
+							if (it != m_reservedItemCounts.end() && it->second > 0) {
+								it->second -= 1;
+								if (it->second == 0) m_reservedItemCounts.erase(it);
+							}
+							m_committedItems[heroToUndo].reset();
+						}
+					}
+					m_committedActions[heroToUndo].reset();
 				}
-				m_currentHero = m_lastCompletedHero;
-				m_heroCursor = m_lastCompletedHero;
+				m_lastCompletedHero = m_completedOrder.empty() ? -1 : m_completedOrder.back();
+				m_currentHero = heroToUndo;
+				m_heroCursor = heroToUndo;
 				m_stage = Stage::Action;
 				m_actionCursor = 0;
 				refreshOptionsForAction(m_actions[m_actionCursor]);
@@ -274,6 +305,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 				auto finalizeHero = [&](ActionType act){
 					m_doneHeroes[m_currentHero] = true;
 					m_lastCompletedHero = m_currentHero;
+					m_completedOrder.push_back(m_currentHero);
 					if (static_cast<int>(m_committedActions.size()) > m_currentHero) m_committedActions[m_currentHero] = act;
 					int next = nextAvailable(m_currentHero, +1);
 					if (next == -1) { m_active = false; m_stage = Stage::Done; }
@@ -322,7 +354,10 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			Option opt = m_options.empty() ? Option{} : m_options[std::clamp(m_optionCursor, 0, static_cast<int>(m_options.size()) - 1)];
 			m_pendingAct = opt.act;
 			m_pendingItem = opt.itemId;
-
+			// 选择物品后暂存占用计数，避免其他角色重复选择同名物品的过量实例
+			if (chosen == ActionType::Item && m_pendingItem.has_value()) {
+				m_reservedItemCounts[*m_pendingItem] += 1;
+			}
 			m_stage = Stage::Target;
 			m_targetCursor = 0;
 		}
@@ -332,11 +367,12 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 		bool targetingHero = (chosen == ActionType::Item);
 		int targetCount = targetingHero ? m_partySize : m_enemyCount;
 		if (targetCount <= 0) return result;
-		if (InputManager::isPressed(Action::Left, window)) {
+		// 支持上下导航（列表为垂直排布），并保留左右导航以兼容原习惯
+		if (InputManager::isPressed(Action::Up, window) || InputManager::isPressed(Action::Left, window)) {
 			m_targetCursor = (m_targetCursor - 1 + targetCount) % targetCount;
 			AudioManager::getInstance().playSound("button_move");
 		}
-		if (InputManager::isPressed(Action::Right, window)) {
+		if (InputManager::isPressed(Action::Down, window) || InputManager::isPressed(Action::Right, window)) {
 			m_targetCursor = (m_targetCursor + 1) % targetCount;
 			AudioManager::getInstance().playSound("button_move");
 		}
@@ -344,7 +380,18 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			if (chosen == ActionType::Fight || chosen == ActionType::Spare) {
 				m_stage = Stage::Action;
 			} else {
+				// 若为物品选择阶段，取消时减少占用计数并清除待提交物品
+				if (chosen == ActionType::Item && m_pendingItem.has_value()) {
+					auto it = m_reservedItemCounts.find(*m_pendingItem);
+					if (it != m_reservedItemCounts.end() && it->second > 0) {
+						it->second -= 1;
+						if (it->second == 0) m_reservedItemCounts.erase(it);
+					}
+					m_pendingItem.reset();
+				}
 				m_stage = Stage::Option;
+				refreshOptionsForAction(m_actions[m_actionCursor]);
+				m_optionCursor = std::min(m_optionCursor, std::max(0, static_cast<int>(m_options.size()) - 1));
 			}
 			AudioManager::getInstance().playSound("button_move");
 		}
@@ -355,8 +402,15 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 			result.command = cmd;
 			m_doneHeroes[m_currentHero] = true;
 			m_lastCompletedHero = m_currentHero;
+			m_completedOrder.push_back(m_currentHero);
 			if (static_cast<int>(m_committedActions.size()) > m_currentHero) {
 				m_committedActions[m_currentHero] = chosen;
+			}
+				// 记录已提交物品，用于撤销时恢复；占用计数保持直到撤销或回合结束
+			if (chosen == ActionType::Item && m_pendingItem.has_value()) {
+				if (static_cast<int>(m_committedItems.size()) > m_currentHero) {
+					m_committedItems[m_currentHero] = m_pendingItem;
+				}
 			}
 			int next = nextAvailable(m_currentHero, +1);
 			if (next == -1) {

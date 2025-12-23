@@ -71,8 +71,8 @@ void BattleActorVisual::startIntro()
     sf::Vector2f to{ m_target.x - m_pos.x, m_target.y - m_pos.y };
     float dist = std::sqrt(to.x*to.x + to.y*to.y);
     if (dist > 1e-5f) {
-        // 统一入场时长约 0.8 秒（独立于速度），视觉更稳定
-        m_introDuration = 0.8f;
+        // 统一入场时长约 1.44 秒（= 1.8 / 1.25），稍微加快
+        m_introDuration = 1.44f;
         m_introElapsed = 0.f;
         m_atTarget = false;
         // 线性速度仍保留（用于回退逻辑），主路径改用缓动
@@ -111,10 +111,8 @@ void BattleActorVisual::advanceFrame(float dt)
         m_frameIndex++;
         if (m_playIntro) {
             if (m_frameIndex >= static_cast<int>(frames.size())) {
-                m_frameIndex = static_cast<int>(frames.size()) - 1; // 停在最后一帧
-                // intro 播完立即切到 idle
-                startIdleLoop();
-                return;
+                // 停在最后一帧，直到移动完成后再切到 idle
+                m_frameIndex = static_cast<int>(frames.size()) - 1;
             }
         } else {
             m_frameIndex %= static_cast<int>(frames.size());
@@ -128,15 +126,15 @@ void BattleActorVisual::updateMovement(float dt)
     if (m_atTarget) return;
 
     if (m_playIntro && m_easedIntro && m_introDuration > 0.f) {
-        // 缓动：ease-out-cubic（平滑减速到位）
+        // 缓动：ease-in-out-cubic（前后更慢，中间更快）
         m_introElapsed = std::min(m_introDuration, m_introElapsed + dt);
         float t = std::clamp(m_introElapsed / m_introDuration, 0.f, 1.f);
-        float p = 1.f - std::pow(1.f - t, 3.f);
+        float p = (t < 0.5f) ? (4.f * t * t * t) : (1.f - std::pow(-2.f * t + 2.f, 3.f) / 2.f);
         sf::Vector2f delta{ m_target.x - m_introStart.x, m_target.y - m_introStart.y };
         m_pos = { m_introStart.x + delta.x * p, m_introStart.y + delta.y * p };
 
-        // 轻微缩放弹跳：入场早期略大，到位时回归原始缩放
-        float bounce = 1.f + 0.06f * std::sin(3.1415926f * std::min(1.f, t * 1.2f));
+        // 轻微缩放弹跳：减弱幅度，整体更柔和
+        float bounce = 1.f + 0.04f * std::sin(3.1415926f * std::min(1.f, t * 1.2f));
         if (m_sprite) {
             m_sprite->setPosition(m_pos);
             m_sprite->setScale({ m_scale.x * bounce, m_scale.y * bounce });
@@ -148,6 +146,8 @@ void BattleActorVisual::updateMovement(float dt)
             m_vel = {0.f, 0.f};
             m_trails.clear();
             if (m_sprite) m_sprite->setScale(m_scale);
+            // 移动完成：此时切换到待机循环
+            startIdleLoop();
         } else {
             pushAfterImage();
         }
