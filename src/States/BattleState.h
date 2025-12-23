@@ -69,7 +69,7 @@ private:
 	std::vector<BattleActorVisual> m_partyVisuals;
 	std::vector<sf::Vector2f> m_partyStarts;
 
-	// 背景：战斗动态帧（不做渐变）
+	// 背景：战斗动态帧与从 Overworld 捕获的背景的渐隐/渐显
 	std::optional<sf::Texture> m_overworldBg;
 	std::optional<sf::Sprite> m_overworldBgSprite;
 	sf::Vector2f m_overworldBgScale{1.f, 1.f};
@@ -80,12 +80,16 @@ private:
 	float m_battleBgTimer = 0.f;
 	float m_battleBgFrameTime = 0.05f;
 
-	// 已移除背景渐变参数
+	// 背景渐变（交叉淡入）：将 Overworld 背景从 100% 淡出到 0%，
+	// 同时将战斗背景从 0% 淡入到 100%，时长可调，保证帧率无关。
+	float m_bgFadeAlpha = 0.f;      // 0..1，战斗背景的不透明度
+	float m_bgFadeTimer = 0.f;      // 渐变累积计时
+	float m_bgFadeDuration = 1.28f; // 渐变总时长（秒），加速至 1.25 倍
 
 	// 入场保留：直到三人到位或达到最大时长
 	bool m_introHoldActive = true;
 	float m_introHoldElapsed = 0.f;
-	float m_introHoldMax = 2.0f;
+	float m_introHoldMax = 2.4f;
 
 	// Act 描述播报
 	std::vector<sf::String> m_pendingActTexts;
@@ -99,7 +103,7 @@ private:
 
 	// When true, Act-style text is used for exit message (no dialogue box)
 	bool m_isExitText = false;
-	bool m_debugDraw = true;
+	bool m_debugDraw = false;
 
 	// 回合计数（进入 Selection 阶段时递增）
 	int m_turnCount = 0;

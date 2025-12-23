@@ -3,15 +3,14 @@
     "has_holy_mantle": true,
     "inventory": [
         "luojia_drink",
-        "luojia_drink",
-        "HolyMantle"
+        "luojia_drink"
     ],
     "money": 0,
     "party": [
         {
             "armor_id": [
                 "whu_shirt",
-                "Null"
+                "holy_mantle"
             ],
             "atk": 10,
             "def": 2,

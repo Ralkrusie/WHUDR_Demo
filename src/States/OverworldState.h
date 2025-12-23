@@ -41,7 +41,7 @@ private:
     std::deque<PositionRecord> m_leaderHistory; // 队长移动记录
     const std::size_t m_maxHistory = 300;       // 限制历史长度
     std::string m_currentRoom;
-    bool m_debugDrawEnabled = true;              // 调试矩形开关
+    bool m_debugDrawEnabled = false;              // 调试矩形开关
 
     // 物品栏 UI 状态
     bool m_inventoryOpen = false;
