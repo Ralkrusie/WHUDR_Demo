@@ -30,8 +30,8 @@ namespace {
             case Action::Left:     return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
             case Action::Right:    return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
             case Action::Confirm:  return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Z)     || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Enter);
-            case Action::Cancel:   return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::X)     || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift);
-            case Action::Menu:     return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::C)     || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl);
+            case Action::Cancel:   return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::X)     || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LShift)   || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RShift);
+            case Action::Menu:     return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::C)     || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl);
             case Action::Debug:    return sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D);
             default: return false;
         }
