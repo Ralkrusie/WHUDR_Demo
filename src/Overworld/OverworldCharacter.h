@@ -33,7 +33,7 @@ public:
 
     void draw(sf::RenderWindow& window);
     
-    // Getters
+    // 访问器
     sf::Vector2f getPosition() const { return m_sprite ? m_sprite->getPosition() : sf::Vector2f{}; }
     sf::Vector2f getCenter() const; // 获取中心点（用于交互判定）
     sf::FloatRect getBounds() const; // 获取碰撞箱（脚底）

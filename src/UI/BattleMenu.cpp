@@ -22,36 +22,36 @@
 //
 
 namespace {
-const sf::Color kPanelBg{0, 0, 0, 220};
-const sf::Color kPanelOutline{80, 80, 80, 255};
-const sf::Color kCyan{40, 140, 200};
-const sf::Color kSusie{200, 60, 160};
-const sf::Color kRalsei{170, 200, 60};
-const sf::Color kOrange{220, 120, 40};
-const sf::Color kHPRed{220, 40, 40};
-const float kPanelShiftDown = 30.f;
+const sf::Color kPanelBg{0, 0, 0, 220};       // 面板背景色（半透明黑）
+const sf::Color kPanelOutline{80, 80, 80, 255}; // 面板边框颜色
+const sf::Color kCyan{40, 140, 200};           // 默认队员强调色（Kris）
+const sf::Color kSusie{200, 60, 160};          // Susie 强调色
+const sf::Color kRalsei{170, 200, 60};         // Ralsei 强调色
+const sf::Color kOrange{220, 120, 40};         // UI 按钮选中强调色
+const sf::Color kHPRed{220, 40, 40};           // HP 损失红色
+const float kPanelShiftDown = 30.f;            // 面板整体下移距离（留出战场空间）
 
 std::string toLowerId(std::string id) {
-	for (auto& c : id) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+	for (auto& c : id) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c))); // 使用 unsigned char 防止负值导致未定义行为
 	return id;
 }
 
 // 缓动函数：立方缓出（上滑引入时更自然）
 float easeOutCubic(float t) {
-	t = std::clamp(t, 0.f, 1.f);
-	float inv = 1.f - t;
-	return 1.f - inv * inv * inv;
+	t = std::clamp(t, 0.f, 1.f);  // 保证 t ∈ [0,1]
+	float inv = 1.f - t;          // 计算 (1 - t)
+	return 1.f - inv * inv * inv; // 1 - (1 - t)^3，实现立方缓出
 }
 
 // 将行动类型映射到头像 variant（用于状态栏显示）
 int actionToHeadVariant(ActionType action) {
 	switch (action) {
-	case ActionType::Fight: return 1;
-	case ActionType::Act: return 2;
-	case ActionType::Item: return 3;
-	case ActionType::Defend: return 4;
-	case ActionType::Spare: return 10;
-	default: return 0;
+	case ActionType::Fight:  return 1;  // 攻击头像
+	case ActionType::Act:    return 2;  // ACT 头像
+	case ActionType::Item:   return 3;  // 物品头像
+	case ActionType::Defend: return 4;  // 防御头像
+	case ActionType::Spare:  return 10; // 饶恕头像
+	default:                 return 0;  // 默认头像
 	}
 }
 }
@@ -60,13 +60,14 @@ int actionToHeadVariant(ActionType action) {
 BattleMenu::BattleMenu()
 {
 	m_actions = { ActionType::Fight, ActionType::Act, ActionType::Item, ActionType::Spare, ActionType::Defend };
-	[[maybe_unused]] bool fontOk = m_font.openFromFile("assets/font/Common.ttf");
+	[[maybe_unused]] bool fontOk = m_font.openFromFile("assets/font/Common.ttf"); // 加载主字体（失败仅影响文字渲染，不影响逻辑）
 
-	[[maybe_unused]] bool heartOk = m_heartTex.loadFromFile("assets/sprite/Heart/spr_heart_0.png");
+	[[maybe_unused]] bool heartOk = m_heartTex.loadFromFile("assets/sprite/Heart/spr_heart_0.png"); // 心形指示器贴图
 	m_heartTex.setSmooth(false);
 	m_heart.emplace(m_heartTex);
-	if (m_heart) m_heart->setScale({1.0f, 1.0f});
+	if (m_heart) m_heart->setScale({1.0f, 1.0f}); // 保持原始像素比例（1x）
 
+	// 行动图标：优先使用贴图，失败时在 drawActions 中自动退回到矩形占位
 	auto loadIcon = [&](int idx, const char* n0, const char* n1) {
 		if (idx < 0 || idx >= 5) return;
 		if (m_icons[idx].normal.loadFromFile(n0) && m_icons[idx].selected.loadFromFile(n1)) {
@@ -82,10 +83,10 @@ BattleMenu::BattleMenu()
 	loadIcon(3, "assets/sprite/UI/spr_btspare_0.png", "assets/sprite/UI/spr_btspare_1.png");
 	loadIcon(4, "assets/sprite/UI/spr_btdefend_0.png", "assets/sprite/UI/spr_btdefend_1.png");
 
-	// 头像：加载多状态（0/1/2/3/4/8/10）
+	// 头像：加载多状态（0/1/2/3/4/8/10），缺失贴图时在绘制阶段回退到占位圆点
 	auto loadHeadSet = [&](const std::string& key) {
 			std::map<int, sf::Texture> set;
-			for (int variant : {0, 1, 2, 3, 4, 8, 10}) {
+			for (int variant : {0, 1, 2, 3, 4, 8, 10}) { // 约定：0默认，1战斗，2Act，3Item，4Defend，8倒地，10Spare
 				std::string path = "assets/sprite/UI/spr_head" + key + "_" + std::to_string(variant) + ".png";
 				sf::Texture tex;
 				if (tex.loadFromFile(path)) {
@@ -105,10 +106,10 @@ BattleMenu::BattleMenu()
 // 根据行动类型刷新子选项列表（Act 来源于当前角色预设，Item 来源于全局背包）
 void BattleMenu::refreshOptionsForAction(ActionType action)
 {
-	m_options.clear();
-	m_pendingAct.reset();
-	m_pendingItem.reset();
-	m_optionCursor = 0;
+	m_options.clear();           // 清空当前子选项
+	m_pendingAct.reset();        // 清空待提交的 Act
+	m_pendingItem.reset();       // 清空待提交的物品 ID
+	m_optionCursor = 0;          // 子选项游标归零
 
 	switch (action) {
 	case ActionType::Fight:
@@ -116,6 +117,7 @@ void BattleMenu::refreshOptionsForAction(ActionType action)
 		break;
 	case ActionType::Act:
 		{
+			// 根据当前角色动态生成可用 Act；若无匹配则回退到“查看”占位
 			auto heroActs = [&]() {
 				std::vector<Option> acts;
 				if (!m_partyRef || m_currentHero < 0 || m_currentHero >= static_cast<int>(m_partyRef->size())) {
@@ -145,18 +147,18 @@ void BattleMenu::refreshOptionsForAction(ActionType action)
 		if (Global::inventory.empty()) {
 			m_options.push_back({ sf::String(L"无物品"), sf::String(L"包里什么也没有"), std::nullopt, std::nullopt });
 		} else {
-			// 对每种ID，跳过已占用的数量，再展示剩余实例
-			std::map<std::string, int> reservedConsumed;
+			// 对每种 ID，跳过已被其他角色暂存占用的数量，再展示剩余实例
+			std::map<std::string, int> reservedConsumed; // 记录本次遍历中已跳过的实例计数
 			for (const auto& it : Global::inventory) {
-				int reserved = 0;
+				int reserved = 0; // 已占用（锁定）的实例数量
 				auto rcIt = m_reservedItemCounts.find(it.id);
 				if (rcIt != m_reservedItemCounts.end()) reserved = std::max(0, rcIt->second);
-				int consumed = reservedConsumed[it.id];
+				int consumed = reservedConsumed[it.id]; // 我们已跳过的数量
 				if (consumed < reserved) {
-					reservedConsumed[it.id] = consumed + 1;
-					continue; // 此实例被占用，跳过
+					reservedConsumed[it.id] = consumed + 1; // 跳过一个被占用的实例
+					continue; // 此实例被占用，跳过展示
 				}
-				m_options.push_back({ it.name, it.info, std::nullopt, it.id });
+				m_options.push_back({ it.name, it.info, std::nullopt, it.id }); // 展示可用实例
 			}
 			if (m_options.empty()) {
 				m_options.push_back({ sf::String(L"无可用物品"), sf::String(L"已被其他角色占用"), std::nullopt, std::nullopt });
@@ -191,18 +193,18 @@ void BattleMenu::beginTurn(const std::vector<HeroRuntime>& party, const std::vec
 	m_doneHeroes.assign(m_partySize, false);
 	m_committedActions.assign(m_partySize, std::nullopt);
 	m_committedItems.assign(m_partySize, std::nullopt);
-	m_reservedItemCounts.clear();
-	m_completedOrder.clear();
+	m_reservedItemCounts.clear(); // 清空上一回合的物品暂存占用
+	m_completedOrder.clear(); // 清空撤销栈
 	m_actionCursor = 0;
 	m_targetCursor = 0;
 	m_optionCursor = 0;
-	m_stage = Stage::Hero;
-	m_active = m_partySize > 0;
-	refreshOptionsForAction(m_actions[m_actionCursor]);
+	m_stage = Stage::Hero;        // 进入选角色阶段
+	m_active = m_partySize > 0;   // 无队员则直接结束
+	refreshOptionsForAction(m_actions[m_actionCursor]); // 初始化子选项（根据默认行动）
 	if (!m_hasShownUI) {
-		m_panelReveal = 0.f;
+		m_panelReveal = 0.f;      // 首次展示使用缓动动画
 	} else {
-		m_panelReveal = 1.f;
+		m_panelReveal = 1.f;      // 后续回合直接显示（不重复动画）
 	}
 }
 
@@ -212,10 +214,12 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 	MenuResult result;
 	if (!m_active) return result;
 
+	// 辅助：判断是否所有角色均已提交行动
 	auto allDone = [&]() {
 		return m_partySize > 0 && std::all_of(m_doneHeroes.begin(), m_doneHeroes.end(), [](bool v){ return v; });
 	};
 
+	// 辅助：从起点向左右环形寻找下一个未完成的角色
 	auto nextAvailable = [&](int start, int dir) {
 		if (m_partySize == 0) return -1;
 		int idx = start;
@@ -351,10 +355,10 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 		if (InputManager::isPressed(Action::Confirm, window)) {
 			AudioManager::getInstance().playSound("button_select");
 			ActionType chosen = m_actions[m_actionCursor];
-			Option opt = m_options.empty() ? Option{} : m_options[std::clamp(m_optionCursor, 0, static_cast<int>(m_options.size()) - 1)];
+			Option opt = m_options.empty() ? Option{} : m_options[std::clamp(m_optionCursor, 0, static_cast<int>(m_options.size()) - 1)]; // 空列表保护，防止越界
 			m_pendingAct = opt.act;
 			m_pendingItem = opt.itemId;
-			// 选择物品后暂存占用计数，避免其他角色重复选择同名物品的过量实例
+			// 选择物品后暂存占用计数，避免其他角色重复选择同名物品的过量实例；撤销/取消时会归还
 			if (chosen == ActionType::Item && m_pendingItem.has_value()) {
 				m_reservedItemCounts[*m_pendingItem] += 1;
 			}
@@ -397,7 +401,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 		}
 		if (InputManager::isPressed(Action::Confirm, window)) {
 			AudioManager::getInstance().playSound("button_select");
-			int clampedTarget = std::clamp(m_targetCursor, 0, targetCount - 1);
+			int clampedTarget = std::clamp(m_targetCursor, 0, targetCount - 1); // 目标索引安全裁剪
 			BattleCommand cmd{ m_currentHero, clampedTarget, chosen, m_pendingAct, m_pendingItem };
 			result.command = cmd;
 			m_doneHeroes[m_currentHero] = true;
@@ -435,7 +439,7 @@ BattleMenu::MenuResult BattleMenu::handleInput(sf::RenderWindow& window)
 void BattleMenu::update(float dt)
 {
 	if (m_panelReveal < 1.f) {
-		m_panelReveal = std::min(1.f, m_panelReveal + dt * 1.0f);
+		m_panelReveal = std::min(1.f, m_panelReveal + dt * 1.0f); // 约 1s 内完成缓动显示
 		if (m_panelReveal >= 1.f) {
 			m_hasShownUI = true;
 		}
@@ -451,10 +455,10 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 	const float paddingX = 24.f;
 	const float gapX = 12.f;
 	const int count = std::max(1, m_partySize);
-	const float boxW = std::max(140.f, (viewSize.x - 2.f * paddingX - gapX * (count - 1)) / static_cast<float>(count));
-	const float boxH = 36.f;
-	const float baseY = panelTop + 8.f + yOffset;
-	const float liftY = 20.f;
+	const float boxW = std::max(140.f, (viewSize.x - 2.f * paddingX - gapX * (count - 1)) / static_cast<float>(count)); // 每个角色框宽度，适配视口与队伍人数
+	const float boxH = 36.f;                              // 角色框高度
+	const float baseY = panelTop + 8.f + yOffset;         // 基准 Y（含面板缓动位移）
+	const float liftY = 20.f;                             // 选中高亮时上移距离
 
 	auto heroColor = [&](const HeroRuntime& h) {
 		std::string key = toLowerId(h.id);
@@ -520,7 +524,7 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 			sf::CircleShape stub(10.f);
 			stub.setFillColor(isCurrent ? accent : sf::Color(120, 120, 120));
 			stub.setPosition({x + 10.f, y + 8.f});
-			window.draw(stub);
+			window.draw(stub); // 贴图缺失时用占位圆点保证布局稳定
 		}
 
 		sf::Text name(m_font, h.name, 18);
@@ -533,7 +537,7 @@ void BattleMenu::drawStatus(sf::RenderWindow& window, float yOffset) const
 		hpLabel.setPosition({x + 50.f, y + 18.f});
 		window.draw(hpLabel);
 
-		float ratio = (h.maxHP > 0) ? std::clamp(static_cast<float>(h.hp) / static_cast<float>(h.maxHP), 0.f, 1.f) : 0.f;
+		float ratio = (h.maxHP > 0) ? std::clamp(static_cast<float>(h.hp) / static_cast<float>(h.maxHP), 0.f, 1.f) : 0.f; // HP 比例（0~1）
 		float barW = std::max(80.f, boxW - 88.f);
 		sf::RectangleShape hpBar({barW, 10.f});
 		hpBar.setPosition({x + 76.f, y + 22.f});
@@ -575,12 +579,12 @@ void BattleMenu::drawActions(sf::RenderWindow& window, float yOffset) const
 	const float baseY = panelTop + 8.f + yOffset; // 原始位置，不含上移
 	float rectX = paddingX + (boxW + gapX) * static_cast<float>(heroIndex);
 	float rectY = baseY;
-	// 水平居中布置图标
-	float spacing = 35.f;
-	int n = static_cast<int>(m_actions.size());
-	float totalW = spacing * static_cast<float>(n - 1);
-	float startX = rectX + (boxW - totalW) * 0.5f;
-	float iconBaseY = rectY + (boxH - 32.f) * 0.5f; // 以 32px 高度为参考居中
+	// 水平居中布置图标（固定间距），保证不同人数下图标位置稳定
+	float spacing = 35.f;                       // 图标间距
+	int n = static_cast<int>(m_actions.size()); // 图标数量
+	float totalW = spacing * static_cast<float>(n - 1); // 视觉总宽度
+	float startX = rectX + (boxW - totalW) * 0.5f;       // 从角色框中居中起始
+	float iconBaseY = rectY + (boxH - 32.f) * 0.5f;      // 以 32px 高度为参考垂直居中
 
 	for (int i = 0; i < n; ++i) {
 		bool selected = ((m_stage == Stage::Action || m_stage == Stage::Option) && i == m_actionCursor);
@@ -609,9 +613,9 @@ void BattleMenu::drawOptions(sf::RenderWindow& window, float yOffset) const
 {
 	const sf::Vector2f viewSize = window.getView().getSize();
 	float panelTop = viewSize.y * 0.6f + kPanelShiftDown;
-	float startY = panelTop + 70.f + yOffset; // 整体上移 30px
-	float lineH = 26.f;
-	float textX = 60.f;
+	float startY = panelTop + 70.f + yOffset; // 子选项/目标列表起始 Y（在面板内再下移一定距离）
+	float lineH = 26.f;                       // 每行高度
+	float textX = 60.f;                       // 左侧文本 X 坐标
 
 	bool showingOptions = (m_stage == Stage::Option || m_stage == Stage::Target);
 
@@ -650,17 +654,17 @@ void BattleMenu::drawOptions(sf::RenderWindow& window, float yOffset) const
 			}
 			return;
 		}
-		float cardW = 260.f;
-		float cardH = 36.f; // 高度为原来约40%
-		float gapY = 10.f;
-		float areaX = viewSize.x - cardW - 24.f; // 右对齐
-		float areaY = startY + 8.f; // 敌人卡片上移 5px
+		float cardW = 260.f;                         // 敌人卡片宽度
+		float cardH = 36.f;                          // 敌人卡片高度（较紧凑）
+		float gapY = 10.f;                           // 卡片间距
+		float areaX = viewSize.x - cardW - 24.f;     // 右侧对齐位置
+		float areaY = startY + 8.f;                  // 纵向位置微调
 		float barWidth = 80.f;
 		float barGap = 14.f;
 		float hpX = areaX + 80.f;
 		float mercyX = hpX + barWidth + barGap;
 		float labelY = areaY - 14.f - 15.f; // HP/Mercy 标签下移 5px
-		// 共享的 HP / Mercy 标题
+		// 共享的 HP / Mercy 标题，避免在循环内重复创建文本对象
 		sf::Text hpLabel(m_font, sf::String(L"HP"), 14);
 		hpLabel.setFillColor(sf::Color(220, 220, 220));
 		hpLabel.setPosition({hpX, labelY});

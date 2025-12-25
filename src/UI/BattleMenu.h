@@ -52,14 +52,14 @@ private:
 
 private:
 	Stage m_stage = Stage::Done;
-	bool m_active = false;
-	int m_currentHero = 0;
-	int m_heroCursor = 0;
-	int m_lastCompletedHero = -1;
-	std::vector<bool> m_doneHeroes;
-	int m_actionCursor = 0;
-	int m_optionCursor = 0;
-	int m_targetCursor = 0;
+	bool m_active = false; // 当前回合是否仍在收集输入
+	int m_currentHero = 0; // 正在操作的角色索引
+	int m_heroCursor = 0; // Hero 阶段的游标
+	int m_lastCompletedHero = -1; // 最近提交过行动的角色（用于撤销）
+	std::vector<bool> m_doneHeroes; // 每个角色是否已提交行动
+	int m_actionCursor = 0; // Action 阶段游标
+	int m_optionCursor = 0; // Option 阶段游标
+	int m_targetCursor = 0; // Target 阶段游标
 	int m_partySize = 0;
 	int m_enemyCount = 0;
 
@@ -68,16 +68,16 @@ private:
 	sf::Font m_font;
 	sf::Texture m_heartTex;
 	std::optional<sf::Sprite> m_heart;
-	std::vector<ActionType> m_actions;
-	std::vector<Option> m_options;
-	std::optional<ActData> m_pendingAct;
-	std::optional<std::string> m_pendingItem;
-	std::vector<std::optional<ActionType>> m_committedActions;
+	std::vector<ActionType> m_actions; // 固定顺序的顶层行动列表
+	std::vector<Option> m_options; // 当前 Action 下的子选项（Act/Item 等）
+	std::optional<ActData> m_pendingAct; // 在 Option 阶段缓存的 Act 数据
+	std::optional<std::string> m_pendingItem; // 在 Option 阶段缓存的物品 ID
+	std::vector<std::optional<ActionType>> m_committedActions; // 已提交行动的记录，供头像 variant 及撤销使用
 	std::vector<std::optional<std::string>> m_committedItems; // 每个角色本回合已提交的物品ID
 	std::map<std::string, int> m_reservedItemCounts; // 本回合暂存占用的物品计数（支持同名多件）
 	std::vector<int> m_completedOrder; // 已完成角色的顺序栈（用于多次撤销）
 	float m_panelReveal = 0.f; // 0 -> hidden below, 1 -> fully shown
-	bool m_hasShownUI = false;
+	bool m_hasShownUI = false; // 是否已播放过面板上滑动画
 
 	IconPair m_icons[5]; // Fight, Act, Item, Spare, Defend
 	std::map<std::string, std::map<int, sf::Texture>> m_headTextures;

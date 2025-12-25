@@ -45,7 +45,7 @@ sf::String wrapTextToWidth(const sf::String& input, float maxWidth, const sf::Fo
     }
     output += currentLine;
     return output;
-}
+    }
 }
 
 // 构造函数：初始化字体、文本与对话框外观、心形指示器
