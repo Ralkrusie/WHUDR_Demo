@@ -54,7 +54,6 @@ BattleState::BattleState(Game& game,
 	m_soul.setBounds(m_bulletBox.getGlobalBounds());
 	m_prevPhase = m_battle.getPhase();
 
-	// Battle box frames (entry/exit)
 	// 载入战斗箱入场/退出序列帧，用于显示“盒子”动画
 	for (int i = 1; i <= 46; ++i) {
 		char path[128];
@@ -147,7 +146,7 @@ BattleState::BattleState(Game& game,
 	// 准备队伍可视化（左侧垂直排列）
 	m_partyVisuals.resize(3);
 	const std::array<sf::Vector2f, 3> targets = { sf::Vector2f{95.f, 100.f}, sf::Vector2f{50.f, 185.f}, sf::Vector2f{90.f, 265.f} };
-	const float desiredIntroTime = 1.f; // 目标：入场约 0.8s 完成
+	const float desiredIntroTime = 1.f; // 目标：入场约 1 秒完成
 	const float minIntroSpeed = 40.f;    // 较低的最小速度，避免瞬移
 	for (int i = 0; i < 3; ++i) {
 		sf::Vector2f start = (i < static_cast<int>(m_partyStarts.size())) ? m_partyStarts[i] : sf::Vector2f{-80.f, 120.f + 60.f * i};
